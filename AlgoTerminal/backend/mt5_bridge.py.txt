@@ -1,0 +1,35 @@
+import MetaTrader5 as mt5
+import pandas as pd
+from datetime import datetime
+import pytz
+
+# Initialize connection to the running MT5 terminal
+def start_mt5():
+    if not mt5.initialize():
+        print("startup failed, error code =", mt5.last_error())
+        return False
+    print("Connected to MT5:", mt5.terminal_info())
+    return True
+
+def get_live_data(symbol="EURUSD", timeframe=mt5.TIMEFRAME_M1, bars=500):
+    # Fetch data
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, bars)
+    if rates is None:
+        return []
+    
+    # Convert to DataFrame for easier JSON handling
+    df = pd.DataFrame(rates)
+    df['time'] = pd.to_datetime(df['time'], unit='s')
+    
+    # Format for Lightweight Charts (Unix Timestamp)
+    data = []
+    for index, row in df.iterrows():
+        data.append({
+            "time": int(row['time'].timestamp()),
+            "open": row['open'],
+            "high": row['high'],
+            "low": row['low'],
+            "close": row['close'],
+            "volume": int(row['tick_volume'])
+        })
+    return data

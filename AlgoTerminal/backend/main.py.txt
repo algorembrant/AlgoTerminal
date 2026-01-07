@@ -1,0 +1,50 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+import mt5_bridge
+import generator
+
+app = FastAPI()
+
+# Allow CORS for Frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, change to your Vercel URL
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Startup
+@app.on_event("startup")
+def startup():
+    mt5_bridge.start_mt5()
+
+class StrategyRequest(BaseModel):
+    name: str
+    symbol: str
+    risk: float
+    sl: int
+    tp: int
+    logic: str
+    price_level: float
+
+@app.get("/api/market-data/{symbol}")
+def get_data(symbol: str):
+    data = mt5_bridge.get_live_data(symbol)
+    return {"data": data}
+
+@app.post("/api/compile")
+def compile_bot(strategy: StrategyRequest):
+    code = generator.compile_strategy(strategy.dict())
+    
+    # Save to file (Simulating 'MetaEditor' readiness)
+    filename = f"strategies/{strategy.name}.mq5"
+    with open(filename, "w") as f:
+        f.write(code)
+        
+    return {"status": "success", "code": code, "path": filename}
+
+if __name__ == "__main__":
+    import uvicorn
+    # Run on 0.0.0.0 to be accessible if you tunnel
+    uvicorn.run(app, host="0.0.0.0", port=8000)

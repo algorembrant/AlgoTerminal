@@ -1,0 +1,115 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { createChart, ColorType } from 'lightweight-charts';
+import axios from 'axios';
+import './App.css'; // Add basic dark styling here
+
+// Configuration
+const API_URL = "http://localhost:8000/api"; // Or your Ngrok URL
+
+function App() {
+  const chartContainerRef = useRef();
+  const [candles, setCandles] = useState([]);
+  const [triggerPrice, setTriggerPrice] = useState(0);
+  const [generatedCode, setGeneratedCode] = useState("");
+  
+  // Strategy State
+  const [strategy, setStrategy] = useState({
+    name: "AlphaOne",
+    symbol: "EURUSD",
+    risk: 1.0,
+    sl: 150,
+    tp: 300
+  });
+
+  // 1. Fetch Data
+  useEffect(() => {
+    const fetchData = async () => {
+      const res = await axios.get(`${API_URL}/market-data/${strategy.symbol}`);
+      setCandles(res.data.data);
+    };
+    fetchData();
+    const interval = setInterval(fetchData, 5000); // Poll every 5s
+    return () => clearInterval(interval);
+  }, [strategy.symbol]);
+
+  // 2. Initialize Chart
+  useEffect(() => {
+    if (!candles.length) return;
+
+    const chart = createChart(chartContainerRef.current, {
+      layout: { background: { type: ColorType.Solid, color: '#000000' }, textColor: '#d1d4dc' },
+      grid: { vertLines: { color: '#333' }, horzLines: { color: '#333' } },
+      width: chartContainerRef.current.clientWidth,
+      height: 500,
+    });
+
+    const candlestickSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+        wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+    });
+    candlestickSeries.setData(candles);
+
+    // Visual Feature: Draw Trigger Line
+    if (triggerPrice > 0) {
+        const priceLine = candlestickSeries.createPriceLine({
+            price: triggerPrice,
+            color: '#be1238',
+            lineWidth: 2,
+            lineStyle: 2, // Dashed
+            axisLabelVisible: true,
+            title: 'BUY TRIGGER',
+        });
+    }
+
+    // Click to set trigger (Simple visual builder)
+    chart.subscribeClick((param) => {
+        if (param.point) {
+            const price = candlestickSeries.coordinateToPrice(param.point.y);
+            setTriggerPrice(price);
+            console.log("Trigger set at:", price);
+        }
+    });
+
+    return () => chart.remove();
+  }, [candles, triggerPrice]);
+
+  // 3. Compile Logic
+  const handleCompile = async () => {
+    const payload = {
+        ...strategy,
+        logic: "cross_above",
+        price_level: triggerPrice
+    };
+    
+    try {
+        const res = await axios.post(`${API_URL}/compile`, payload);
+        setGeneratedCode(res.data.code);
+        alert("Bot Compiled Successfully! Saved to backend.");
+    } catch (err) {
+        console.error(err);
+    }
+  };
+
+  return (
+    <div className="terminal-container">
+      <header>
+        <h1>ALGO TERMINAL // <span style={{color:'lime'}}>ONLINE</span></h1>
+        <div className="controls">
+            <label>Risk %: <input type="number" value={strategy.risk} onChange={e => setStrategy({...strategy, risk: parseFloat(e.target.value)})} /></label>
+            <label>SL (pts): <input type="number" value={strategy.sl} onChange={e => setStrategy({...strategy, sl: int(e.target.value)})} /></label>
+            <button className="btn-compile" onClick={handleCompile}>COMPILE MQL5</button>
+        </div>
+      </header>
+      
+      <div className="main-interface">
+        <div ref={chartContainerRef} className="chart-area" />
+        <div className="code-preview">
+            <h3>GENERATED SOURCE</h3>
+            <textarea readOnly value={generatedCode} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

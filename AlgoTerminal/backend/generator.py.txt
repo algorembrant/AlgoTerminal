@@ -1,0 +1,55 @@
+from jinja2 import Template
+
+MQL5_TEMPLATE = """
+//+------------------------------------------------------------------+
+//| Auto-Generated Strategy: {{ strategy_name }}
+//| Target: {{ symbol }} | Risk: {{ risk_percent }}%
+//+------------------------------------------------------------------+
+#include <Trade\\Trade.mqh>
+CTrade trade;
+
+input double RiskPercent = {{ risk_percent }};
+input int StopLossPoints = {{ sl_points }};
+input int TakeProfitPoints = {{ tp_points }};
+
+int OnInit() {
+    return(INIT_SUCCEEDED);
+}
+
+void OnTick() {
+    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    
+    // Calculated Lot Size based on Risk
+    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double riskMoney = balance * (RiskPercent / 100.0);
+    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+    double lotSize = NormalizeDouble(riskMoney / (StopLossPoints * tickValue), 2);
+
+    // LOGIC: {{ logic_description }}
+    {% if logic_type == "cross_above" %}
+    if (bid > {{ trigger_price }}) {
+        if (PositionsTotal() == 0) {
+            trade.Buy(lotSize, _Symbol, ask, ask - (StopLossPoints * _Point), ask + (TakeProfitPoints * _Point));
+        }
+    }
+    {% endif %}
+}
+"""
+
+def compile_strategy(data):
+    # logic data comes from Frontend JSON
+    context = {
+        "strategy_name": data.get("name", "UnnamedBot"),
+        "symbol": data.get("symbol", "EURUSD"),
+        "risk_percent": data.get("risk", 1.0),
+        "sl_points": data.get("sl", 100),
+        "tp_points": data.get("tp", 200),
+        "logic_type": data.get("logic", "cross_above"),
+        "trigger_price": data.get("price_level", 0.0),
+        "logic_description": f"Buy when price crosses {data.get('price_level')}"
+    }
+    
+    template = Template(MQL5_TEMPLATE)
+    code = template.render(context)
+    return code
